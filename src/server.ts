@@ -29,6 +29,77 @@ export async function verifyToken(token: string, opts: VerifyOptions): Promise<T
   return body.data;
 }
 
+export interface AdminOptions {
+  /** auth 서비스 base URL */
+  url: string;
+  /** 프로젝트 ref */
+  ref: string;
+  /** secret 키(bk_sec_). 서버 환경변수에서만. 절대 브라우저로 노출 금지. */
+  secretKey: string;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  role: string;
+  oauthProvider?: string | null;
+  createdAt?: string | number | null;
+}
+
+export interface AdminClient {
+  listUsers(opts?: { limit?: number; offset?: number }): Promise<{ users: AdminUser[]; total: number }>;
+  getUser(id: string): Promise<AdminUser>;
+  createUser(creds: { email: string; password: string }): Promise<AdminUser>;
+  deleteUser(id: string): Promise<void>;
+}
+
+/**
+ * 서버 전용 관리 클라이언트. secret 키로 프로젝트 유저를 관리한다.
+ * 절대 브라우저 코드에서 import/사용하지 말 것(secret 키 노출).
+ */
+export function createAdminClient(opts: AdminOptions): AdminClient {
+  const base = opts.url.replace(/\/$/, '');
+  const root = `${base}/auth/v1/${opts.ref}/admin`;
+  const headers = { apikey: opts.secretKey, 'content-type': 'application/json' };
+
+  async function call(path: string, init: { method: string; body?: unknown }): Promise<{ data: Record<string, unknown> }> {
+    const res = await fetch(`${root}${path}`, {
+      method: init.method,
+      headers,
+      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+    });
+    const text = await res.text();
+    const json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    if (!res.ok) {
+      const msg = typeof json.error === 'string' ? json.error : `admin request failed (${res.status})`;
+      throw new AuthError(msg, res.status);
+    }
+    return json as { data: Record<string, unknown> };
+  }
+
+  return {
+    async listUsers(o = {}) {
+      const q = new URLSearchParams();
+      if (o.limit != null) q.set('limit', String(o.limit));
+      if (o.offset != null) q.set('offset', String(o.offset));
+      const qs = q.toString();
+      const r = await call(`/users${qs ? '?' + qs : ''}`, { method: 'GET' });
+      return r.data as unknown as { users: AdminUser[]; total: number };
+    },
+    async getUser(id) {
+      const r = await call(`/users/${encodeURIComponent(id)}`, { method: 'GET' });
+      return (r.data as { user: AdminUser }).user;
+    },
+    async createUser(creds) {
+      const r = await call('/users', { method: 'POST', body: creds });
+      return (r.data as { user: AdminUser }).user;
+    },
+    async deleteUser(id) {
+      await call(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    },
+  };
+}
+
 /** `Authorization: Bearer <token>` 헤더에서 토큰만 추출. 없으면 null. */
 export function getBearerToken(authorizationHeader?: string | null): string | null {
   if (!authorizationHeader) return null;

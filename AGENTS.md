@@ -92,13 +92,31 @@ fetch('/api/secure', { headers: { Authorization: `Bearer ${auth.getSession()?.ac
 ```
 (토큰 만료/리프레시는 SDK가 자동 처리하므로 직접 갱신 로직을 만들지 마라.)
 
+## 5.5 서버 관리 (secret 키, 선택)
+프로젝트 유저를 서버에서 관리해야 하면 `createAdminClient`를 써라. **secret 키(`bk_sec_`)는 서버 전용** — 브라우저에서 import 금지.
+```ts
+import { createAdminClient } from 'backends-sdk/server';
+
+const admin = createAdminClient({
+  url: process.env.BACKENDS_URL!,
+  ref: process.env.BACKENDS_PROJECT_REF!,
+  secretKey: process.env.BACKENDS_SECRET_KEY!, // 서버 env에서만
+});
+
+await admin.listUsers({ limit: 50 });
+await admin.getUser(id);
+await admin.createUser({ email, password }); // 이메일 인증 없이 생성
+await admin.deleteUser(id);
+```
+
 ## 6. DO / DON'T
 | ✅ DO | ❌ DON'T |
 |------|---------|
 | `createAuthClient`/`verifyToken` 사용 | `/auth/v1/...`에 raw `fetch` 직접 호출 |
 | 클라이언트 인스턴스 1개 재사용 | 컴포넌트/요청마다 새로 생성 |
 | 서버에서 `verifyToken`으로 위임 검증 | JWT를 라이브러리로 직접 디코드/검증 |
-| `publishableKey`를 클라이언트에 사용 | 비밀 시크릿을 찾거나 만들려 시도 |
+| `publishableKey`는 클라이언트, `secretKey`는 서버 전용 | secret 키를 브라우저/프론트에 노출 |
+| 유저 관리는 `createAdminClient`(서버) 사용 | 클라이언트에서 admin API 호출 시도 |
 | OAuth 콜백 페이지에서 `completeOAuth()` 호출 | OAuth 시작만 하고 교환 누락 |
 | 토큰 저장/리프레시는 SDK에 위임 | localStorage/쿠키에 토큰 수동 저장 |
 

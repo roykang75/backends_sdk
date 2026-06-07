@@ -114,6 +114,19 @@ try {
 
 ### `getBearerToken(headerValue) → string | null` (`backends-sdk/server`)
 
+### `createAdminClient({ url, ref, secretKey }) → AdminClient` (`backends-sdk/server`)
+**서버 전용.** secret 키(`bk_sec_`)로 프로젝트 유저를 관리. 브라우저에서 쓰지 말 것.
+- `listUsers({ limit?, offset? })` → `{ users, total }`
+- `getUser(id)` → `AdminUser`
+- `createUser({ email, password })` → `AdminUser` (이메일 인증 없이 생성)
+- `deleteUser(id)` → `void`
+
+```ts
+import { createAdminClient } from 'backends-sdk/server';
+const admin = createAdminClient({ url, ref, secretKey: process.env.BACKENDS_SECRET_KEY! });
+const { users } = await admin.listUsers();
+```
+
 ## 동작 방식
 
 - 모든 요청에 `apikey: <publishableKey>` 헤더 자동 첨부 (잊을 일 없음).
