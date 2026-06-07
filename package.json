@@ -27,6 +27,13 @@
   },
   "keywords": ["backends", "auth", "sdk", "authentication"],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/roykang75/backends_sdk.git"
+  },
+  "homepage": "https://github.com/roykang75/backends_sdk#readme",
+  "bugs": { "url": "https://github.com/roykang75/backends_sdk/issues" },
+  "sideEffects": false,
   "devDependencies": {
     "@types/node": "^20.0.0",
     "tsup": "^8.0.0",
