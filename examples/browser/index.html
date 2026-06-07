@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>backends-sdk browser example</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
+  fieldset { margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 8px; }
+  label { display: block; margin: .5rem 0 .15rem; font-size: .85rem; color: #555; }
+  input { width: 100%; padding: .45rem; box-sizing: border-box; }
+  button { padding: .5rem 1rem; margin: .25rem .25rem 0 0; cursor: pointer; }
+  pre { background: #f5f5f5; padding: .75rem; border-radius: 8px; overflow: auto; font-size: .8rem; }
+  .ok { color: #0a7d33; } .err { color: #c0392b; }
+</style>
+</head>
+<body>
+<h1>backends-sdk 브라우저 예제</h1>
+<p>게시된 <code>backends-sdk</code>를 esm.sh로 직접 import — 빌드 없이 CORS·OAuth를 종단 확인.</p>
+
+<fieldset>
+  <legend>설정</legend>
+  <label>API URL</label><input id="cfg-url" placeholder="https://api-dev.oiio.xyz" />
+  <label>프로젝트 ref</label><input id="cfg-ref" placeholder="abcd1234" />
+  <label>publishable key</label><input id="cfg-key" placeholder="pk_..." />
+  <button id="btn-apply">적용</button>
+</fieldset>
+
+<fieldset>
+  <legend>이메일 인증</legend>
+  <label>이메일</label><input id="email" type="email" />
+  <label>비밀번호</label><input id="password" type="password" />
+  <button id="btn-signup">가입</button>
+  <button id="btn-signin">로그인</button>
+  <button id="btn-signout">로그아웃</button>
+</fieldset>
+
+<fieldset>
+  <legend>소셜 로그인</legend>
+  <button id="btn-google">Google로 로그인</button>
+</fieldset>
+
+<h3>상태</h3>
+<div id="status">초기화 중…</div>
+<pre id="session">-</pre>
+
+<script type="module">
+import { createAuthClient, AuthError } from 'https://esm.sh/backends-sdk@0.1.1';
+
+const $ = (id) => document.getElementById(id);
+const statusEl = $('status'), sessionEl = $('session');
+
+// 설정: URL 쿼리 > localStorage > placeholder. 키는 publishable(브라우저 노출 안전)만 다룬다.
+const qs = new URLSearchParams(location.search);
+const CFG_KEY = 'backends.example.config';
+const saved = JSON.parse(localStorage.getItem(CFG_KEY) ?? '{}');
+$('cfg-url').value = qs.get('url') ?? saved.url ?? 'https://api-dev.oiio.xyz';
+$('cfg-ref').value = qs.get('ref') ?? saved.ref ?? '';
+$('cfg-key').value = qs.get('key') ?? saved.key ?? '';
+
+let client = null;
+
+function show(msg, isErr = false) {
+  statusEl.textContent = msg;
+  statusEl.className = isErr ? 'err' : 'ok';
+  console.log(isErr ? '[ERR]' : '[OK]', msg);
+}
+
+function render(session) {
+  sessionEl.textContent = session
+    ? JSON.stringify({ user: session.user, expiresAt: new Date(session.expiresAt).toISOString() }, null, 2)
+    : '(세션 없음)';
+}
+
+async function init() {
+  const cfg = { url: $('cfg-url').value.trim(), ref: $('cfg-ref').value.trim(), key: $('cfg-key').value.trim() };
+  if (!cfg.url || !cfg.ref || !cfg.key) { show('설정(URL/ref/key)을 입력하고 적용을 누르세요', true); return; }
+  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+
+  client = createAuthClient({ url: cfg.url, ref: cfg.ref, publishableKey: cfg.key });
+  client.onChange((event, session) => { show(`이벤트: ${event}`); render(session); });
+
+  // OAuth 복귀라면 ?code= 교환 (아니면 null)
+  try {
+    const s = await client.completeOAuth();
+    if (s) { show(`OAuth 로그인 성공: ${s.user.email}`); render(s); return; }
+  } catch (e) {
+    show(`OAuth 교환 실패: ${e.message}`, true); return;
+  }
+
+  render(client.getSession());
+  show(client.getSession() ? `세션 복원됨: ${client.getUser().email}` : '준비 완료 (로그인 필요)');
+}
+
+const guard = (fn) => async () => {
+  if (!client) { show('먼저 설정을 적용하세요', true); return; }
+  try { await fn(); } catch (e) {
+    const detail = e instanceof AuthError ? ` (status=${e.status}${e.code ? `, code=${e.code}` : ''})` : '';
+    show(`${e.message}${detail}`, true);
+  }
+};
+
+$('btn-apply').onclick = init;
+$('btn-signup').onclick = guard(async () => {
+  const { user } = await client.signUp({ email: $('email').value, password: $('password').value });
+  show(`가입+로그인 성공: ${user.email}`);
+});
+$('btn-signin').onclick = guard(async () => {
+  const { user } = await client.signIn({ email: $('email').value, password: $('password').value });
+  show(`로그인 성공: ${user.email}`);
+});
+$('btn-signout').onclick = guard(async () => { await client.signOut(); show('로그아웃 완료'); });
+$('btn-google').onclick = guard(() => { client.signInWithOAuth('google'); });
+
+init();
+</script>
+</body>
+</html>

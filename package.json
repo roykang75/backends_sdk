@@ -1,6 +1,6 @@
 {
   "name": "backends-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Minimal client + server SDK for backends auth (project-scoped end users).",
   "type": "module",
   "exports": {

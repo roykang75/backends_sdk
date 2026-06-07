@@ -153,7 +153,8 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     const redirectTo =
       opts?.redirectTo ??
       (typeof location !== 'undefined' ? location.origin + location.pathname : '');
-    const url = `${base}/auth/v1/${ref}/oauth/${provider}?return_to=${encodeURIComponent(redirectTo)}`;
+    // 브라우저 네비게이션은 apikey 헤더를 실을 수 없으므로 쿼리로 전달(서버가 쿼리 폴백 지원).
+    const url = `${base}/auth/v1/${ref}/oauth/${provider}?apikey=${encodeURIComponent(apikey)}&return_to=${encodeURIComponent(redirectTo)}`;
     if (typeof location !== 'undefined') location.assign(url);
     return url;
   }
