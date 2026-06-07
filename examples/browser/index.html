@@ -38,6 +38,7 @@
 <fieldset>
   <legend>소셜 로그인</legend>
   <button id="btn-google">Google로 로그인</button>
+  <button id="btn-github">GitHub으로 로그인</button>
 </fieldset>
 
 <h3>상태</h3>
@@ -111,6 +112,7 @@ $('btn-signin').onclick = guard(async () => {
 });
 $('btn-signout').onclick = guard(async () => { await client.signOut(); show('로그아웃 완료'); });
 $('btn-google').onclick = guard(() => { client.signInWithOAuth('google'); });
+$('btn-github').onclick = guard(() => { client.signInWithOAuth('github'); });
 
 init();
 </script>
