@@ -60,9 +60,12 @@ export interface AdminClient {
 export function createAdminClient(opts: AdminOptions): AdminClient {
   const base = opts.url.replace(/\/$/, '');
   const root = `${base}/auth/v1/${opts.ref}/admin`;
-  const headers = { apikey: opts.secretKey, 'content-type': 'application/json' };
 
   async function call(path: string, init: { method: string; body?: unknown }): Promise<{ data: Record<string, unknown> }> {
+    // content-type은 본문이 있을 때만. 본문 없는 GET/DELETE에 붙이면
+    // Fastify가 "empty JSON body"로 400을 낸다.
+    const headers: Record<string, string> = { apikey: opts.secretKey };
+    if (init.body !== undefined) headers['content-type'] = 'application/json';
     const res = await fetch(`${root}${path}`, {
       method: init.method,
       headers,
