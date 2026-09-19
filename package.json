@@ -1,6 +1,6 @@
 {
   "name": "backends-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Minimal client + server SDK for backends auth (project-scoped end users).",
   "type": "module",
   "exports": {
@@ -22,6 +22,7 @@
   "engines": { "node": ">=18" },
   "scripts": {
     "build": "tsup",
+    "test": "npm run build && node --test 'test/*.test.mjs'",
     "type-check": "tsc --noEmit",
     "prepare": "tsup"
   },

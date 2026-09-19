@@ -38,14 +38,20 @@ export interface StorageLike {
   removeItem(key: string): void;
 }
 
+/** 메일로 보내는 일회용 코드/링크의 종류. */
+export type OtpType = 'signup' | 'magiclink' | 'invite' | 'recovery';
+
 /** SDK 호출 실패. status는 HTTP 상태코드. */
 export class AuthError extends Error {
   status?: number;
   code?: string;
-  constructor(message: string, status?: number, code?: string) {
+  /** 발송 제한(429, code `OVER_EMAIL_SEND_RATE_LIMIT`)일 때 재시도까지 남은 초. */
+  retryAfter?: number;
+  constructor(message: string, status?: number, code?: string, retryAfter?: number) {
     super(message);
     this.name = 'AuthError';
     this.status = status;
     this.code = code;
+    this.retryAfter = retryAfter;
   }
 }

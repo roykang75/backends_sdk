@@ -40,8 +40,8 @@ const auth = createAuthClient({
   publishableKey: 'bk_pub_...',
 });
 
-// 가입(가입 후 자동 로그인) / 로그인
-await auth.signUp({ email, password });
+// 가입 / 로그인
+await auth.signUp({ email, password }); // 가입 확인을 켠 프로젝트면 session 이 null — 아래 참고
 const { user, session } = await auth.signIn({ email, password });
 
 // 현재 상태
@@ -72,6 +72,69 @@ const session = await auth.completeOAuth(); // code 없으면 null
 > OAuth가 동작하려면 backends에 공급자 콜백이 등록돼 있어야 하고, `redirectTo`(=return_to)는
 > 프로젝트 **Site URL** 기준으로 허용됩니다.
 
+## 브라우저 — 이메일 인증 흐름
+
+메일로 오는 링크/6자리 코드를 쓰는 흐름들입니다. 메서드 이름은 Supabase와 같습니다.
+
+### 가입 확인 (프로젝트 설정으로 켬)
+
+확인을 켜면 `signUp` 이 세션을 주지 않습니다. 확인 전 `signIn` 은 403(`EMAIL_NOT_CONFIRMED`).
+
+```ts
+const { session, confirmationRequired } = await auth.signUp({ email, password });
+if (confirmationRequired) showCheckYourEmail(); // session 은 null
+```
+
+### 매직링크 + 6자리 코드
+
+```ts
+// 발송 — 링크와 코드가 함께 간다. 유저가 없으면 만든다(원치 않으면 shouldCreateUser: false)
+await auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + '/auth/callback' } });
+
+// 코드 입력 UI를 쓸 때 — 링크 대신 6자리 코드로 세션 발급
+const { session } = await auth.verifyOtp({ email, token: code, type: 'magiclink' });
+
+// 재발송 (type: 'signup' | 'magiclink' | 'invite' | 'recovery')
+await auth.resend({ email, type: 'signup' });
+```
+
+### 착지 페이지 (`emailRedirectTo` 또는 Site URL)
+
+메일 링크를 누르면 앱으로 `?code=` 를 달고 돌아옵니다. 가입 확인·매직링크·초대·비밀번호
+재설정이 모두 같은 처리입니다. **한 페이지에서 한 번만** 호출하세요(코드는 1회용).
+
+```ts
+try {
+  const session = await auth.exchangeCodeForSession(); // completeOAuth 와 같은 함수
+} catch (e) {
+  if (e.code === 'OTP_EXPIRED') showExpiredLink(); // ?error=access_denied&error_code=otp_expired
+}
+```
+
+### 초대 (서버에서 발송 → 앱에서 수락)
+
+```ts
+// 서버: secret 키로 초대 메일 발송
+await createAdminClient({ url, ref, secretKey }).inviteUser('someone@example.com');
+
+// 앱의 수락 페이지: 착지 후 비밀번호 설정
+await auth.exchangeCodeForSession();
+await auth.updateUser({ password });
+```
+
+### 발송 제한
+
+메일 발송 계열은 429로 막힐 수 있습니다. `AuthError.code === 'OVER_EMAIL_SEND_RATE_LIMIT'`
+이고 `retryAfter`(초)가 실립니다.
+
+```ts
+try {
+  await auth.resend({ email, type: 'signup' });
+} catch (e) {
+  if (e.code === 'OVER_EMAIL_SEND_RATE_LIMIT') showRetryIn(e.retryAfter);
+}
+```
+
 ## 서버 — 토큰 검증
 
 소비자 백엔드에서 들어온 access token을 검증합니다. **JWT를 직접 검증하지 마세요**
@@ -100,10 +163,14 @@ try {
 ### `createAuthClient(options) → AuthClient`
 - `options`: `{ url, ref, publishableKey, storage?, storageKey?, autoRefresh? }`
 - 메서드:
-  - `signUp({ email, password })` → `{ user, session }` (가입 후 자동 로그인)
+  - `signUp({ email, password })` → `{ user, session, confirmationRequired }` (확인 OFF면 자동 로그인, ON이면 `session: null`)
   - `signIn({ email, password })` → `{ user, session }`
+  - `signInWithOtp({ email, options? })` → `void` (매직링크+코드 발송)
+  - `verifyOtp({ email, token, type })` → `{ user, session }`
+  - `resend({ email, type })` → `void`
+  - `updateUser({ password })` → `void` (로그인 상태 필요)
   - `signInWithOAuth(provider, { redirectTo? })` → URL(브라우저면 이동)
-  - `completeOAuth()` → `Session | null`
+  - `completeOAuth()` / `exchangeCodeForSession()` → `Session | null` (같은 함수)
   - `getSession()` → `Session | null`
   - `getUser()` → `User | null`
   - `signOut()` → `Promise<void>`
@@ -119,6 +186,7 @@ try {
 - `listUsers({ limit?, offset? })` → `{ users, total }`
 - `getUser(id)` → `AdminUser`
 - `createUser({ email, password })` → `AdminUser` (이메일 인증 없이 생성)
+- `inviteUser(email, { redirectTo? })` → `{ userId, email }` (초대 메일 발송)
 - `deleteUser(id)` → `void`
 
 ```ts

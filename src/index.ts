@@ -1,4 +1,4 @@
-import type { AuthEvent, Session, StorageLike, User } from './types.js';
+import type { AuthEvent, OtpType, Session, StorageLike, User } from './types.js';
 import { AuthError } from './types.js';
 
 export interface AuthClientOptions {
@@ -17,10 +17,20 @@ export interface AuthClientOptions {
 }
 
 export interface AuthClient {
-  /** 가입 후 자동 로그인까지 수행하고 세션을 반환. */
-  signUp(creds: { email: string; password: string }): Promise<{ user: User; session: Session }>;
+  /** 가입. 프로젝트가 가입 확인을 요구하면 session 은 null 이고 confirmationRequired 가 true — 메일의 링크/코드로 확인 후 signIn 또는 verifyOtp. */
+  signUp(creds: { email: string; password: string }): Promise<{ user: User; session: Session | null; confirmationRequired: boolean }>;
   /** 이메일/비밀번호 로그인. */
   signIn(creds: { email: string; password: string }): Promise<{ user: User; session: Session }>;
+  /** 매직링크 + 6자리 코드 발송. 유저가 없으면 만든다(shouldCreateUser=false 면 안 만듦). */
+  signInWithOtp(params: { email: string; options?: { emailRedirectTo?: string; shouldCreateUser?: boolean } }): Promise<void>;
+  /** 메일의 6자리 코드로 세션 발급. */
+  verifyOtp(params: { email: string; token: string; type: OtpType }): Promise<{ user: User; session: Session }>;
+  /** 확인/초대/재설정 메일 재발송. */
+  resend(params: { email: string; type: OtpType }): Promise<void>;
+  /** 로그인 상태에서 비밀번호 설정(초대 수락·코드 기반 재설정 마무리). */
+  updateUser(attrs: { password: string }): Promise<void>;
+  /** URL 의 ?code= 를 세션으로 교환(OAuth·매직링크·가입확인·초대 착지 공통). completeOAuth 와 같다. */
+  exchangeCodeForSession(): Promise<Session | null>;
   /** OAuth 시작(공급자로 리다이렉트). 브라우저면 이동, 아니면 URL만 반환. */
   signInWithOAuth(provider: 'google' | 'github', opts?: { redirectTo?: string }): string;
   /** OAuth 복귀 시 URL의 `?code=`를 토큰으로 교환. code 없으면 null. */
@@ -36,6 +46,9 @@ export interface AuthClient {
 }
 
 type Listener = (event: AuthEvent, session: Session | null) => void;
+
+/** 토큰 발급 응답(login/refresh/oauth exchange/verify 공통). */
+type TokenData = { accessToken: string; refreshToken: string; expiresIn: number; tokenType: string };
 
 function memoryStore(): StorageLike {
   const m = new Map<string, string>();
@@ -105,10 +118,10 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     refreshTimer = setTimeout(() => { void refresh(); }, ms);
   }
 
-  async function api(
+  async function api<T = { data: TokenData }>(
     path: string,
     init: { method: string; body?: unknown; auth?: boolean },
-  ): Promise<{ data: { accessToken: string; refreshToken: string; expiresIn: number; tokenType: string } }> {
+  ): Promise<T> {
     const headers: Record<string, string> = { apikey, 'content-type': 'application/json' };
     if (init.auth && session) headers.authorization = `Bearer ${session.accessToken}`;
     const res = await fetch(`${base}/auth/v1/${ref}${path}`, {
@@ -120,9 +133,14 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     const json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
     if (!res.ok) {
       const msg = typeof json.error === 'string' ? json.error : `request failed (${res.status})`;
-      throw new AuthError(msg, res.status, typeof json.code === 'string' ? json.code : undefined);
+      throw new AuthError(
+        msg,
+        res.status,
+        typeof json.code === 'string' ? json.code : undefined,
+        typeof json.retry_after === 'number' ? json.retry_after : undefined,
+      );
     }
-    return json as { data: { accessToken: string; refreshToken: string; expiresIn: number; tokenType: string } };
+    return json as T;
   }
 
   function sessionFromTokens(d: { accessToken: string; refreshToken: string; expiresIn: number }): Session {
@@ -144,9 +162,53 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
     return { user: s.user, session: s };
   }
 
-  async function signUp(creds: { email: string; password: string }): Promise<{ user: User; session: Session }> {
-    await api('/register', { method: 'POST', body: creds });
-    return signIn(creds); // 가입 직후 바로 로그인하여 세션 확보
+  async function signUp(
+    creds: { email: string; password: string },
+  ): Promise<{ user: User; session: Session | null; confirmationRequired: boolean }> {
+    const r = await api<{ data: { userId: string; email: string; role: string; confirmation_required?: boolean } }>(
+      '/register',
+      { method: 'POST', body: creds },
+    );
+    // 프로젝트가 가입 확인을 요구하면 세션이 없다 — 로그인 시도는 403 이 되므로 하지 않는다.
+    if (r.data.confirmation_required) {
+      return {
+        user: { id: r.data.userId, email: r.data.email, role: r.data.role },
+        session: null,
+        confirmationRequired: true,
+      };
+    }
+    const s = await signIn(creds); // 가입 직후 바로 로그인하여 세션 확보
+    return { ...s, confirmationRequired: false };
+  }
+
+  async function signInWithOtp(p: {
+    email: string;
+    options?: { emailRedirectTo?: string; shouldCreateUser?: boolean };
+  }): Promise<void> {
+    const body: Record<string, unknown> = { email: p.email };
+    if (p.options?.shouldCreateUser !== undefined) body.create_user = p.options.shouldCreateUser;
+    if (p.options?.emailRedirectTo) body.redirect_to = p.options.emailRedirectTo;
+    await api<unknown>('/otp', { method: 'POST', body });
+  }
+
+  async function verifyOtp(p: {
+    email: string;
+    token: string;
+    type: OtpType;
+  }): Promise<{ user: User; session: Session }> {
+    const r = await api('/verify', { method: 'POST', body: { email: p.email, token: p.token, type: p.type } });
+    const s = sessionFromTokens(r.data);
+    persist(s);
+    emit('SIGNED_IN');
+    return { user: s.user, session: s };
+  }
+
+  async function resend(p: { email: string; type: OtpType }): Promise<void> {
+    await api<unknown>('/resend', { method: 'POST', body: { email: p.email, type: p.type } });
+  }
+
+  async function updateUser(a: { password: string }): Promise<void> {
+    await api<unknown>('/user', { method: 'PATCH', body: { password: a.password }, auth: true });
   }
 
   function signInWithOAuth(provider: 'google' | 'github', opts?: { redirectTo?: string }): string {
@@ -162,6 +224,18 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   async function completeOAuth(): Promise<Session | null> {
     if (typeof location === 'undefined') return null;
     const u = new URL(location.href);
+    // 메일 링크가 만료/무효면 착지 URL 에 ?error=access_denied&error_code=otp_expired 로 온다.
+    const errCode = u.searchParams.get('error_code');
+    if (errCode) {
+      u.searchParams.delete('error');
+      u.searchParams.delete('error_code');
+      if (typeof history !== 'undefined') history.replaceState({}, '', u.toString());
+      throw new AuthError(
+        errCode === 'otp_expired' ? 'Email link is invalid or has expired' : errCode,
+        400,
+        errCode.toUpperCase(),
+      );
+    }
     const code = u.searchParams.get('code');
     if (!code) return null;
     const r = await api('/oauth/exchange', { method: 'POST', body: { code } });
@@ -199,8 +273,13 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   return {
     signUp,
     signIn,
+    signInWithOtp,
+    verifyOtp,
+    resend,
+    updateUser,
     signInWithOAuth,
     completeOAuth,
+    exchangeCodeForSession: completeOAuth,
     getSession: () => session,
     getUser: () => session?.user ?? null,
     signOut,
@@ -208,5 +287,5 @@ export function createAuthClient(options: AuthClientOptions): AuthClient {
   };
 }
 
-export type { Session, User, AuthEvent, StorageLike } from './types.js';
+export type { Session, User, AuthEvent, OtpType, StorageLike } from './types.js';
 export { AuthError } from './types.js';

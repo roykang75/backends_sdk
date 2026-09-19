@@ -50,6 +50,8 @@ export interface AdminClient {
   listUsers(opts?: { limit?: number; offset?: number }): Promise<{ users: AdminUser[]; total: number }>;
   getUser(id: string): Promise<AdminUser>;
   createUser(creds: { email: string; password: string }): Promise<AdminUser>;
+  /** 초대 메일 발송(비밀번호 없이 유저 생성). 수락 페이지에서 exchangeCodeForSession → updateUser 로 비밀번호 설정. */
+  inviteUser(email: string, opts?: { redirectTo?: string }): Promise<{ userId: string; email: string }>;
   deleteUser(id: string): Promise<void>;
 }
 
@@ -96,6 +98,13 @@ export function createAdminClient(opts: AdminOptions): AdminClient {
     async createUser(creds) {
       const r = await call('/users', { method: 'POST', body: creds });
       return (r.data as { user: AdminUser }).user;
+    },
+    async inviteUser(email, opts = {}) {
+      const r = await call('/invite', {
+        method: 'POST',
+        body: { email, ...(opts.redirectTo ? { redirect_to: opts.redirectTo } : {}) },
+      });
+      return r.data as unknown as { userId: string; email: string };
     },
     async deleteUser(id) {
       await call(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' });

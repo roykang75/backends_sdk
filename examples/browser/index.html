@@ -103,8 +103,8 @@ const guard = (fn) => async () => {
 
 $('btn-apply').onclick = init;
 $('btn-signup').onclick = guard(async () => {
-  const { user } = await client.signUp({ email: $('email').value, password: $('password').value });
-  show(`가입+로그인 성공: ${user.email}`);
+  const { user, confirmationRequired } = await client.signUp({ email: $('email').value, password: $('password').value });
+  show(confirmationRequired ? `가입 성공: ${user.email} — 메일의 확인 링크를 누르세요` : `가입+로그인 성공: ${user.email}`);
 });
 $('btn-signin').onclick = guard(async () => {
   const { user } = await client.signIn({ email: $('email').value, password: $('password').value });

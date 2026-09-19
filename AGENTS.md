@@ -34,7 +34,7 @@ export const auth = createAuthClient({
 - 모듈 1개에서 만들어 **재사용**한다(요청마다 새로 만들지 말 것 — 세션/리프레시 타이머가 흩어진다).
 - email/password:
 ```ts
-await auth.signUp({ email, password });   // 가입 후 자동 로그인됨
+await auth.signUp({ email, password });   // 확인 OFF면 자동 로그인, ON이면 session null (§3.5)
 await auth.signIn({ email, password });
 await auth.signOut();
 const session = auth.getSession();        // null이면 미로그인
@@ -55,6 +55,34 @@ const session = await auth.completeOAuth();  // URL의 ?code= 자동 교환, 없
 - **흔한 실수:** (2)를 빼먹는다 → 사용자가 돌아왔는데 로그인이 안 된 상태가 된다. 반드시 콜백
   페이지에서 `completeOAuth()`를 호출하라.
 - `redirectTo`는 프로젝트 **Site URL** 기준 origin이어야 허용된다.
+
+## 3.5 이메일 인증 흐름 (가입 확인 · 매직링크/코드 · 초대 · 재설정)
+
+메서드 이름은 Supabase와 같다. 착지 처리(`exchangeCodeForSession`)는 OAuth와 공용이다.
+
+```ts
+// 가입: 확인 요구 프로젝트면 session 이 null — "메일을 확인하세요" 화면으로.
+const { session, confirmationRequired } = await auth.signUp({ email, password });
+if (confirmationRequired) showCheckYourEmail();
+
+// 매직링크/코드
+await auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + '/auth/callback' } });
+await auth.verifyOtp({ email, token: code, type: 'magiclink' }); // 코드 입력 UI 를 쓸 때
+
+// 착지 페이지(/auth/callback 또는 Site URL): 링크 클릭 후 ?code= 가 붙어 온다.
+try { await auth.exchangeCodeForSession(); } catch (e) { if (e.code === 'OTP_EXPIRED') showExpired(); }
+
+// 초대 수락 페이지: 착지 후 비밀번호 설정
+await auth.exchangeCodeForSession();
+await auth.updateUser({ password });
+
+// 서버(초대)
+await createAdminClient({ url, ref, secretKey }).inviteUser('someone@example.com');
+```
+
+- 확인 전 `signIn` 은 403 `EMAIL_NOT_CONFIRMED` → "확인 메일 재발송" 버튼(`resend({ email, type: 'signup' })`)을 붙여라.
+- 발송 계열 429 는 `AuthError.code === 'OVER_EMAIL_SEND_RATE_LIMIT'` + `retryAfter`(초) → 남은 시간을 보여주고 버튼을 잠가라.
+- `verifyOtp` 실패는 401 `OTP_EXPIRED` / `OTP_INVALID` → 두 경우 문구를 나눠라.
 
 ## 4. 서버 검증 (보호된 API/페이지)
 들어온 토큰을 **직접 검증하지 말고** `verifyToken`을 써라.
@@ -106,6 +134,7 @@ const admin = createAdminClient({
 await admin.listUsers({ limit: 50 });
 await admin.getUser(id);
 await admin.createUser({ email, password }); // 이메일 인증 없이 생성
+await admin.inviteUser(email, { redirectTo });  // 초대 메일 발송 → { userId, email }
 await admin.deleteUser(id);
 ```
 
@@ -119,13 +148,20 @@ await admin.deleteUser(id);
 | 유저 관리는 `createAdminClient`(서버) 사용 | 클라이언트에서 admin API 호출 시도 |
 | OAuth 콜백 페이지에서 `completeOAuth()` 호출 | OAuth 시작만 하고 교환 누락 |
 | 토큰 저장/리프레시는 SDK에 위임 | localStorage/쿠키에 토큰 수동 저장 |
+| `signUp` 의 `confirmationRequired` 분기 처리 | 가입 직후 세션이 늘 있다고 가정 |
+| 착지 페이지에서 `exchangeCodeForSession()` 1회 | 한 페이지에서 두 번 호출(code는 1회용) |
+| 6자리 코드는 폼 입력으로 받아 `verifyOtp` | 6자리 코드를 URL 쿼리/경로에 싣기 |
+| 메일 링크는 서버가 만든 것을 그대로 사용 | `/auth/v1/:ref/confirm` 을 앱에서 직접 열기(메일 링크 전용) |
+| 429 의 `retryAfter` 로 재발송 버튼 잠금 | 실패 시 즉시 재시도 루프 |
 
 ## 7. 검증(연동 후 자가 확인)
 - 빌드/타입체크가 통과하는가.
 - 로그인 → `auth.getSession()`이 채워지는가.
 - 보호 API에 토큰 없이 호출 시 401, 유효 토큰 시 통과하는가.
 - OAuth: 콜백 페이지에서 `completeOAuth()` 후 세션이 생기는가.
+- 이메일 흐름: 확인 메일의 링크 → 착지 페이지에서 세션이 생기는가. 만료 링크에 전용 문구가 뜨는가.
 
 ## 8. 표면 한계 (오해 방지)
 - 이 SDK는 **auth만** 한다. DB 쿼리/스토리지/리얼타임 같은 건 없다(있는 척 만들지 마라).
-- `@supabase/supabase-js`가 아니다. supabase 클라이언트 API(`supabase.from()...`)를 흉내내지 마라.
+- `@supabase/supabase-js`가 아니다. auth 메서드 이름만 Supabase와 맞췄을 뿐, 그 밖의 supabase
+  클라이언트 API(`supabase.from()...`)를 흉내내지 마라.
