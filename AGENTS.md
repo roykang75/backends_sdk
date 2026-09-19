@@ -67,7 +67,7 @@ if (confirmationRequired) showCheckYourEmail();
 
 // 매직링크/코드
 await auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + '/auth/callback' } });
-await auth.verifyOtp({ email, token: code, type: 'magiclink' }); // 코드 입력 UI 를 쓸 때
+await auth.verifyOtp({ email, token: code, type: 'magiclink' }); // 코드 입력 UI 를 쓸 때 — 기본 메일 템플릿은 링크만 담으므로 대시보드에서 템플릿에 {{ .Token }} 을 넣어야 코드가 발송된다
 
 // 착지 페이지(/auth/callback 또는 Site URL): 링크 클릭 후 ?code= 가 붙어 온다.
 try { await auth.exchangeCodeForSession(); } catch (e) { if (e.code === 'OTP_EXPIRED') showExpired(); }
