@@ -2,7 +2,7 @@ import type { AuthEvent, OtpType, Session, StorageLike, User } from './types.js'
 import { AuthError } from './types.js';
 
 export interface AuthClientOptions {
-  /** auth 서비스 base URL (예: https://backends-auth-dev.oiio.xyz) */
+  /** auth 서비스 base URL (예: https://backends-auth.oiio.xyz) */
   url: string;
   /** 프로젝트 ref (대시보드에서 확인) */
   ref: string;

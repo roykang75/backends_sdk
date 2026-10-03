@@ -20,7 +20,7 @@
 
 <fieldset>
   <legend>설정</legend>
-  <label>API URL</label><input id="cfg-url" placeholder="https://api-dev.oiio.xyz" />
+  <label>API URL</label><input id="cfg-url" placeholder="https://backends-api.oiio.xyz" />
   <label>프로젝트 ref</label><input id="cfg-ref" placeholder="abcd1234" />
   <label>publishable key</label><input id="cfg-key" placeholder="pk_..." />
   <button id="btn-apply">적용</button>
@@ -55,7 +55,7 @@ const statusEl = $('status'), sessionEl = $('session');
 const qs = new URLSearchParams(location.search);
 const CFG_KEY = 'backends.example.config';
 const saved = JSON.parse(localStorage.getItem(CFG_KEY) ?? '{}');
-$('cfg-url').value = qs.get('url') ?? saved.url ?? 'https://api-dev.oiio.xyz';
+$('cfg-url').value = qs.get('url') ?? saved.url ?? 'https://backends-api.oiio.xyz';
 $('cfg-ref').value = qs.get('ref') ?? saved.ref ?? '';
 $('cfg-key').value = qs.get('key') ?? saved.key ?? '';
 

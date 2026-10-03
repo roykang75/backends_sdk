@@ -13,7 +13,7 @@
 npm install backends-sdk
 ```
 사용자에게 3개 값을 요청하거나 환경변수로 받는다(대시보드 `/projects/<ref>` 에서 확인):
-- `BACKENDS_URL` (예: `https://backends-auth-dev.oiio.xyz`)
+- `BACKENDS_URL` (예: `https://backends-auth.oiio.xyz`)
 - `BACKENDS_REF` (프로젝트 ref)
 - `BACKENDS_PUBLISHABLE_KEY` (`bk_pub_…`)
 

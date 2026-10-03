@@ -22,7 +22,7 @@ npm install github:roykang75/backends_sdk
 ## 필요한 값
 
 backends 대시보드 `/projects/<ref>` 에서:
-- **url** — auth 서비스 base (예: `https://backends-auth-dev.oiio.xyz`)
+- **url** — auth 서비스 base (예: `https://backends-auth.oiio.xyz`)
 - **ref** — 프로젝트 ref
 - **publishableKey** — `bk_pub_…` (브라우저 노출 안전한 공개 키)
 
@@ -35,7 +35,7 @@ backends 대시보드 `/projects/<ref>` 에서:
 import { createAuthClient } from 'backends-sdk';
 
 const auth = createAuthClient({
-  url: 'https://backends-auth-dev.oiio.xyz',
+  url: 'https://backends-auth.oiio.xyz',
   ref: 'your_project_ref',
   publishableKey: 'bk_pub_...',
 });
@@ -148,7 +148,7 @@ if (!token) return res.status(401).end();
 
 try {
   const claims = await verifyToken(token, {
-    url: 'https://backends-auth-dev.oiio.xyz',
+    url: 'https://backends-auth.oiio.xyz',
     ref: 'your_project_ref',
     publishableKey: 'bk_pub_...',
   });

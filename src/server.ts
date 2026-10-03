@@ -2,7 +2,7 @@ import type { TokenClaims } from './types.js';
 import { AuthError } from './types.js';
 
 export interface VerifyOptions {
-  /** auth 서비스 base URL (예: https://backends-auth-dev.oiio.xyz) */
+  /** auth 서비스 base URL (예: https://backends-auth.oiio.xyz) */
   url: string;
   /** 프로젝트 ref */
   ref: string;
